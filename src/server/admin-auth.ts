@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { activeAdmin, sessionTag } from "./admin-users";
 import { clientIp } from "./ip";
 
@@ -6,22 +6,28 @@ export const COOKIE = "locoomo_admin";
 const TTL_MS = 8 * 60 * 60 * 1000;
 
 export const adminConfigured = () =>
-  Boolean(process.env.ADMIN_PASSWORD && process.env.ADMIN_OWNER_EMAIL && (process.env.ADMIN_SESSION_SECRET || "").length >= 32);
-export const ownerEmail = () => (process.env.ADMIN_OWNER_EMAIL ?? "").trim().toLowerCase();
+  Boolean((process.env.ADMIN_SESSION_SECRET || "").length >= 32);
 
-const digest = (s: string) => createHash("sha256").update(s).digest();
 const sign = (payload: string) => createHmac("sha256", process.env.ADMIN_SESSION_SECRET!).update(payload).digest("base64url");
 
-/** The bootstrap owner signs in with ADMIN_OWNER_EMAIL + ADMIN_PASSWORD (both from env). */
-export function ownerLoginOk(email: string, candidate: string): boolean {
-  const passOk = timingSafeEqual(digest(candidate), digest(process.env.ADMIN_PASSWORD ?? ""));
-  return email.trim().toLowerCase() === ownerEmail() && passOk;
+const isLoopback = (v: string) => /^(localhost|127(\.\d+){3}|::1|::ffff:127(\.\d+){3})$/i.test(v.trim().replace(/^\[|\]$/g, "").replace(/:\d+$/, (m, i, str) => (str.includes("::") || str.split(":").length > 2 ? m : "")));
+
+/**
+ * Inviting admins is only possible from the developer's own machine: the server must be running locally with
+ * ALLOW_ADMIN_INVITE=1 (set it only in your local .env.local, never on the host), the request must be addressed
+ * to localhost, and any forwarding headers (`next dev` adds its own) may only name loopback addresses.
+ */
+export function inviteAllowed(headers: Headers): boolean {
+  if (process.env.ALLOW_ADMIN_INVITE !== "1") return false;
+  if (!isLoopback(headers.get("host") ?? "")) return false;
+  if (["x-real-ip", "x-vercel-forwarded-for", "cf-connecting-ip", "forwarded"].some((h) => headers.has(h))) return false;
+  return ["x-forwarded-for", "x-forwarded-host"].every((h) => (headers.get(h) ?? "").split(",").filter(Boolean).every(isLoopback));
 }
 
-export interface AdminSession { email: string; owner: boolean }
+export interface AdminSession { email: string }
 
-export function newSession(s: { email: string; owner: boolean; passwordHash?: string }): { value: string; maxAge: number } {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + TTL_MS, sub: s.email, o: s.owner, pv: s.owner ? "" : sessionTag(s.passwordHash ?? "") })).toString("base64url");
+export function newSession(s: { email: string; passwordHash: string }): { value: string; maxAge: number } {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + TTL_MS, sub: s.email, pv: sessionTag(s.passwordHash) })).toString("base64url");
   return { value: `${payload}.${sign(payload)}`, maxAge: TTL_MS / 1000 };
 }
 
@@ -40,10 +46,9 @@ export async function getAdmin(req: Request): Promise<AdminSession | null> {
   const expected = sign(payload);
   if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   try {
-    const p = JSON.parse(Buffer.from(payload, "base64url").toString()) as { exp: number; sub: string; o: boolean; pv: string };
+    const p = JSON.parse(Buffer.from(payload, "base64url").toString()) as { exp: number; sub: string; pv: string };
     if (!(p.exp > Date.now()) || typeof p.sub !== "string") return null;
-    if (p.o) return p.sub === ownerEmail() ? { email: p.sub, owner: true } : null;
-    return (await activeAdmin(p.sub, p.pv)) ? { email: p.sub, owner: false } : null;
+    return (await activeAdmin(p.sub, p.pv)) ? { email: p.sub } : null;
   } catch {
     return null;
   }

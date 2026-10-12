@@ -29,7 +29,8 @@ IPs are stored only as an HMAC-SHA256 hash (IPv6 grouped by /64), keyed by `IP_H
 - The sheet is read in full on each registration. Fine for thousands of rows, not hundreds of thousands.
 
 ## Admin dashboard (`/admin`)
-Set `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` (32+ chars) in the environment, then sign in at `/admin`. Without both, admin is disabled.
+Set `ADMIN_SESSION_SECRET` (32+ chars) in the environment. Admins sign in at `/admin` with their email and password; "Forgot your password?" emails a reset link.
+- **Inviting admins is possible only from the owner's computer.** In your *local* `.env.local` (never on the host) set `ALLOW_ADMIN_INVITE=1`, point the Sheets/Resend vars at production and `NEXT_PUBLIC_SITE_URL` at the live site, run `npm run dev`, and open `http://localhost:3000/admin/invite`. The invitee gets an email link (72h) to choose a password. On the live site the page and API return 404.
 - Lists every registration with all details, search, filters and a CSV export. Pins open in a new tab; the IP hash is never sent to the browser.
 - **Station established** (with a confirm step) marks the entry in the sheet (`Station Status`, `Station Email Status`) and emails the participant that their Pickup Station is live. It never emails twice; if the email fails the station stays marked and the button becomes **Retry email**.
 - Session is a signed, HttpOnly, SameSite=Strict cookie (8h). Login is throttled (5 failures / 15 min per IP, in memory), and every state-changing call checks the Origin header. It is a single shared password: rotate it when staff change.

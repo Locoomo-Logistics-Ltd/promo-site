@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { adminConfigured, cookieHeader, loginThrottle, newSession, ownerLoginOk, sameOrigin } from "@/server/admin-auth";
+import { adminConfigured, cookieHeader, loginThrottle, newSession, sameOrigin } from "@/server/admin-auth";
 import { verifyLogin } from "@/server/admin-users";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  if (!adminConfigured()) return NextResponse.json({ error: "Admin access isn't configured (see ADMIN_OWNER_EMAIL, ADMIN_PASSWORD, ADMIN_SESSION_SECRET)." }, { status: 503 });
+  if (!adminConfigured()) return NextResponse.json({ error: "Admin access isn't configured (set ADMIN_SESSION_SECRET)." }, { status: 503 });
   if (!sameOrigin(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const t = loginThrottle(req);
   if (t.blocked) return NextResponse.json({ error: "Too many attempts. Try again in 15 minutes." }, { status: 429 });
@@ -15,13 +15,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Enter your email and password." }, { status: 400 });
   }
   try {
-    let session: ReturnType<typeof newSession> | null = null;
-    if (ownerLoginOk(body.email, body.password)) {
-      session = newSession({ email: body.email.trim().toLowerCase(), owner: true });
-    } else {
-      const u = await verifyLogin(body.email, body.password);
-      if (u) session = newSession({ email: u.email, owner: false, passwordHash: u.passwordHash });
-    }
+    const u = await verifyLogin(body.email, body.password);
+    const session = u ? newSession({ email: u.email, passwordHash: u.passwordHash }) : null;
     if (!session) {
       t.fail();
       await new Promise((r) => setTimeout(r, 500));

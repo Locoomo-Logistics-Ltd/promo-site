@@ -28,7 +28,7 @@ export function AdminApp() {
   const [state, setState] = useState<"loading" | "login" | "ready">("loading");
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState("");
-  const [me, setMe] = useState<{ email: string; owner: boolean } | null>(null);
+  const [me, setMe] = useState<{ email: string } | null>(null);
   const [team, setTeam] = useState(false);
 
   const load = useCallback(async () => {
