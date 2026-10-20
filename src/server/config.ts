@@ -9,4 +9,3 @@ export function env(name: string): string {
 export class ConfigError extends Error {}
 
 export const isMock = () => process.env.MOCK_SERVICES === "1" && process.env.NODE_ENV !== "production";
-export const ipPolicy = (): "flag" | "block" => (process.env.IP_POLICY === "block" ? "block" : "flag");

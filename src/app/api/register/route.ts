@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { registrationSchema, fieldErrors, inNigeria, isShortPinHost, type ApiResult } from "@/lib/validation";
-import { clientIp, hashIp } from "@/server/ip";
+import { clientIp } from "@/server/ip";
 import { register } from "@/server/service";
 import { getDeps } from "@/server/deps";
-import { isMock, ConfigError } from "@/server/config";
 import { resolveShortPin } from "@/server/pin";
 
 export const runtime = "nodejs";
@@ -54,15 +53,7 @@ export async function POST(req: Request) {
       if (c) { d.nominationLat = c.lat; d.nominationLng = c.lng; }
     }
 
-    const mock = isMock();
-    if (!mock && !process.env.IP_HASH_SECRET) throw new ConfigError("IP_HASH_SECRET not set");
-    const ipHash = ip ? hashIp(ip, process.env.IP_HASH_SECRET || "dev-only-secret") : null;
-
-    const outcome = await register(
-      getDeps(),
-      parsed.data,
-      ipHash,
-    );
+    const outcome = await register(getDeps(), parsed.data);
 
     switch (outcome.kind) {
       case "created":
@@ -79,16 +70,6 @@ export async function POST(req: Request) {
         return reply({ status: "error", message: "You've already applied, but we still couldn't send your confirmation email. Please try again later or contact support." }, 502);
       case "duplicate_email":
         return reply({ status: "duplicate_email", message: "This email address has already been registered for the promo." }, 409);
-      case "ip_flagged":
-        return reply({
-          status: "ip_flagged",
-          message: "Your details have been saved, but a registration from this network has already been recorded. To keep the campaign fair, only one entry per household or network is approved automatically, so our team will review yours manually. You won't get an automatic confirmation email.",
-        }, 202);
-      case "ip_blocked":
-        return reply({
-          status: "ip_blocked",
-          message: "A registration from this network has already been recorded, and multiple entries from the same household or network are restricted. If you share a connection with someone who applied, contact support and we'll review it.",
-        }, 409);
     }
   } catch (e) {
     const reason = (e as Error).message;

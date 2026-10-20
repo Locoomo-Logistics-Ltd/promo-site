@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { register } from "@/server/service";
 import { clientIp, hashIp, ipFingerprint } from "@/server/ip";
 import { registrationSchema } from "@/lib/validation";
@@ -21,16 +21,14 @@ function fakes(opts: { failMail?: () => boolean; onAppend?: () => void } = {}) {
 }
 const input = (email: string, over = {}) =>
   registrationSchema.parse({
-    fullName: "Ada Obi", email, phone: "08031234567", item: "Dress", price: "5000", vendorName: "Vee Store",
+    fullName: "Ada Obi", email, phone: "08031234567", item: "Dress", price: "5000", vendorName: "Vee Store", itemLink: "https://shop.example/dress", lagosResident: true, stationConfirm: true,
     vendorSocial: "@v", consent: true, ...over,
   });
-
-beforeEach(() => { delete process.env.IP_POLICY; });
 
 describe("register", () => {
   it("creates one row and sends one email", async () => {
     const f = fakes();
-    expect(await register(f.deps, input("a@x.com"), "ip1")).toEqual({ kind: "created", emailSent: true });
+    expect(await register(f.deps, input("a@x.com"))).toEqual({ kind: "created", emailSent: true });
     expect(f.rows).toHaveLength(1);
     expect(f.rows[0]).toMatchObject({ status: "ACCEPTED", emailStatus: "SENT", emailAttempts: 1 });
     expect(f.mails).toEqual(["a@x.com"]);
@@ -38,52 +36,45 @@ describe("register", () => {
 
   it("rejects a duplicate email: no new row, no email", async () => {
     const f = fakes();
-    await register(f.deps, input("a@x.com"), "ip1");
-    expect((await register(f.deps, input("A@X.com"), "ip2")).kind).toBe("duplicate_email");
-    expect((await register(f.deps, input("a+promo@x.com"), "ip3")).kind).toBe("duplicate_email");
+    await register(f.deps, input("a@x.com"));
+    expect((await register(f.deps, input("A@X.com"))).kind).toBe("duplicate_email");
+    expect((await register(f.deps, input("a+promo@x.com"))).kind).toBe("duplicate_email");
     expect(f.rows).toHaveLength(1);
     expect(f.mails).toHaveLength(1);
   });
 
-  it("flags same-IP entry for review: row kept, no automatic email", async () => {
+  it("accepts several entries from the same network", async () => {
     const f = fakes();
-    await register(f.deps, input("a@x.com"), "ip1");
-    expect((await register(f.deps, input("b@x.com"), "ip1")).kind).toBe("ip_flagged");
-    expect(f.rows[1]).toMatchObject({ status: "NEEDS_REVIEW", emailStatus: "SKIPPED" });
-    expect(f.mails).toEqual(["a@x.com"]);
-  });
-
-  it("IP_POLICY=block writes nothing", async () => {
-    process.env.IP_POLICY = "block";
-    const f = fakes();
-    await register(f.deps, input("a@x.com"), "ip1");
-    expect((await register(f.deps, input("b@x.com"), "ip1")).kind).toBe("ip_blocked");
-    expect(f.rows).toHaveLength(1);
+    await register(f.deps, input("a@x.com"));
+    expect((await register(f.deps, input("b@x.com"))).kind).toBe("created");
+    expect(f.rows).toHaveLength(2);
+    expect(f.rows[1]).toMatchObject({ status: "ACCEPTED", emailStatus: "SENT" });
+    expect(f.mails).toEqual(["a@x.com", "b@x.com"]);
   });
 
   it("email failure keeps the registration; retry resends without a second row", async () => {
     let fail = true;
     const f = fakes({ failMail: () => fail });
-    expect(await register(f.deps, input("a@x.com"), "ip1")).toEqual({ kind: "created", emailSent: false });
+    expect(await register(f.deps, input("a@x.com"))).toEqual({ kind: "created", emailSent: false });
     expect(f.rows[0]).toMatchObject({ emailStatus: "FAILED", emailAttempts: 1 });
     fail = false;
-    expect((await register(f.deps, input("a@x.com"), "ip1")).kind).toBe("resent");
+    expect((await register(f.deps, input("a@x.com"))).kind).toBe("resent");
     expect(f.rows).toHaveLength(1);
     expect(f.rows[0]).toMatchObject({ emailStatus: "SENT", emailAttempts: 2 });
-    expect((await register(f.deps, input("a@x.com"), "ip1")).kind).toBe("duplicate_email");
+    expect((await register(f.deps, input("a@x.com"))).kind).toBe("duplicate_email");
     expect(f.mails).toHaveLength(1);
   });
 
   it("stops resending after the attempt cap", async () => {
     const f = fakes({ failMail: () => true });
-    for (let i = 0; i < 5; i++) await register(f.deps, input("a@x.com"), "ip1");
+    for (let i = 0; i < 5; i++) await register(f.deps, input("a@x.com"));
     expect(f.rows).toHaveLength(1);
     expect(f.rows[0].emailAttempts).toBe(3);
   });
 
   it("concurrent identical submissions yield exactly one row and one email", async () => {
     const f = fakes();
-    const res = await Promise.all(Array.from({ length: 10 }, () => register(f.deps, input("a@x.com"), "ip1")));
+    const res = await Promise.all(Array.from({ length: 10 }, () => register(f.deps, input("a@x.com"))));
     expect(res.filter((r) => r.kind === "created")).toHaveLength(1);
     expect(f.rows).toHaveLength(1);
     expect(f.mails).toHaveLength(1);
@@ -106,7 +97,7 @@ describe("register", () => {
       }
       return n;
     };
-    const r = await register(f.deps, input("a@x.com"), "ip1");
+    const r = await register(f.deps, input("a@x.com"));
     expect(r.kind).toBe("duplicate_email");
     expect(f.rows.filter((x) => x.status === "ACCEPTED")).toHaveLength(1);
     expect(f.mails).toHaveLength(0);
@@ -115,7 +106,7 @@ describe("register", () => {
   it("sheet failure stops everything: no email", async () => {
     const f = fakes();
     f.deps.store.list = async () => { throw new Error("sheets down"); };
-    await expect(register(f.deps, input("a@x.com"), "ip1")).rejects.toThrow();
+    await expect(register(f.deps, input("a@x.com"))).rejects.toThrow();
     expect(f.mails).toHaveLength(0);
   });
 });
@@ -144,7 +135,7 @@ describe("pin storage", () => {
   it("stores the pin link and coordinates on the row", async () => {
     const f = fakes();
     const i = input("pin@x.com", { nomination: "Green Pharmacy", nominationPin: "https://www.google.com/maps/place/X/@6.5069,3.3781,17z" });
-    await register(f.deps, i, "ip9");
+    await register(f.deps, i);
     expect(f.rows[0]).toMatchObject({ nomination: "Green Pharmacy", nominationLat: 6.5069, nominationLng: 3.3781 });
     expect(f.rows[0].nominationPin).toContain("google.com/maps");
   });

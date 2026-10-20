@@ -8,6 +8,7 @@ const COLUMNS = [
   "emailAttempts", "emailSentAt", "emailError", "reviewNote",
   "nominationPin", "nominationLat", "nominationLng",
   "stationStatus", "stationEstablishedAt", "stationEmailStatus",
+  "rewardAmount", "itemLink",
 ] as const satisfies readonly (keyof RegistrationRecord)[];
 
 const HEADERS = [
@@ -16,9 +17,12 @@ const HEADERS = [
   "Email Attempts", "Email Sent At", "Email Error", "Review Note",
   "Pickup Station Pin", "Pickup Station Lat", "Pickup Station Lng",
   "Station Status", "Station Established At", "Station Email Status",
+  "Reward Amount (NGN)", "Item Link",
 ];
 
-const LAST_COL = "Y"; // 25 columns
+const LAST_COL = "AA"; // 27 columns
+/** 0-based index to a sheet column letter (0 -> A, 26 -> AA). */
+const colLetter = (i: number): string => (i >= 26 ? colLetter(Math.floor(i / 26) - 1) : "") + String.fromCharCode(65 + (i % 26));
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
 const b64url = (b: Buffer | string) => Buffer.from(b).toString("base64url");
@@ -99,7 +103,8 @@ let headerChecked = false;
 async function ensureHeader() {
   if (headerChecked) return;
   const data = await call(`/values/${range(`A1:${LAST_COL}1`)}`);
-  if (!data.values?.[0]?.length) {
+  // Also rewrites the header row of sheets created before newer columns existed.
+  if ((data.values?.[0]?.length ?? 0) < HEADERS.length) {
     await call(`/values/${range(`A1:${LAST_COL}1`)}?valueInputOption=RAW`, {
       method: "PUT",
       body: JSON.stringify({ values: [HEADERS] }),
@@ -119,7 +124,8 @@ function fromRow(row: string[], rowNumber: number): StoredRegistration {
     emailAttempts: Number(g(15)) || 0, emailSentAt: g(16), emailError: g(17), reviewNote: g(18), nominationPin: g(19),
     nominationLat: g(20) === "" ? "" : Number(g(20)), nominationLng: g(21) === "" ? "" : Number(g(21)),
     stationStatus: g(22) as StoredRegistration["stationStatus"], stationEstablishedAt: g(23),
-    stationEmailStatus: g(24) as StoredRegistration["stationEmailStatus"], rowNumber,
+    stationEmailStatus: g(24) as StoredRegistration["stationEmailStatus"],
+    rewardAmount: g(25) === "" ? "" : Number(g(25)), itemLink: g(26), rowNumber,
   };
 }
 
@@ -146,7 +152,7 @@ export const sheetsStore: RegistrationStore = {
   async update(rowNumber, patch) {
     const data = Object.entries(patch).map(([k, v]) => {
       const i = COLUMNS.indexOf(k as (typeof COLUMNS)[number]);
-      const col = String.fromCharCode(65 + i);
+      const col = colLetter(i);
       return { range: `'${tab()}'!${col}${rowNumber}`, values: [[v]] };
     });
     await call(`/values:batchUpdate`, {

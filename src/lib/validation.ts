@@ -44,6 +44,20 @@ export function normalizeSocial(raw: string): string | null {
   return null;
 }
 
+/** An http(s) link to the product page. A bare domain gets https:// added. Returns the normalized URL or null. */
+export function normalizeLink(raw: string): string | null {
+  const v = raw.trim();
+  if (!v || /\s/.test(v) || v.length > 500 || !v.includes(".")) return null;
+  try {
+    const url = new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (!url.hostname.includes(".")) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 const priceField = z
   .union([z.string(), z.number()], { error: "Enter the item price." })
   .transform((v, ctx) => {
@@ -73,6 +87,16 @@ export const registrationSchema = z.object({
     .refine((v) => v !== null, "Enter a valid Nigerian phone number, e.g. 0803 123 4567."),
   item: text("Requested item", 2, 120),
   price: priceField,
+  itemLink: z
+    .string({ error: "Paste the link to the item you want to buy." })
+    .transform((v, ctx) => {
+      const n = normalizeLink(v);
+      if (!n) {
+        ctx.addIssue({ code: "custom", message: "Paste the link to the item (a web page or Instagram post), e.g. https://…" });
+        return z.NEVER;
+      }
+      return n;
+    }),
   vendorName: text("Vendor name", 2, 80),
   vendorPhone: z
     .string()
@@ -109,10 +133,17 @@ export const registrationSchema = z.object({
       const pin = v ? parsePin(v) : null;
       if (pin && !pin.ok) ctx.addIssue({ code: "custom", message: pin.error });
     }),
+  /** Promo is open to Lagos residents only. */
+  lagosResident: z.literal(true, { error: "This promo is open to Lagos residents only. Please confirm you live in Lagos." }),
+  /** Required only when a station is nominated (checked in superRefine below). */
+  stationConfirm: z.boolean().optional().default(false),
   consent: z.literal(true, { error: "Please accept the privacy notice to continue." }),
   /** Honeypot: real users never fill this in. */
   website: z.string().optional().default(""),
 }).superRefine((v, ctx) => {
+  if ((v.nomination || v.nominationPin) && !v.stationConfirm) {
+    ctx.addIssue({ code: "custom", path: ["stationConfirm"], message: "Please confirm the shop isn't one of the excluded Pickup Station partners." });
+  }
   if (!v.nominationPin && v.nomination) {
     ctx.addIssue({ code: "custom", path: ["nominationPin"], message: "Paste the shop's location pin so we can find it." });
   }
@@ -142,8 +173,6 @@ export type ApiResult =
   | { status: "success"; emailSent: boolean; message: string }
   | { status: "resent"; message: string }
   | { status: "duplicate_email"; message: string }
-  | { status: "ip_flagged"; message: string }
-  | { status: "ip_blocked"; message: string }
   | { status: "invalid"; errors: FieldErrors; message: string }
   | { status: "rate_limited"; message: string }
   | { status: "error"; message: string; detail?: string };

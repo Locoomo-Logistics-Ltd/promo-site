@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { MAX_EMAIL_ATTEMPTS, ipPolicy } from "./config";
+import { MAX_EMAIL_ATTEMPTS } from "./config";
 import type { Mailer, RegistrationRecord, RegistrationStore, StoredRegistration } from "./types";
 import { emailKey, type RegistrationInput } from "@/lib/validation";
 
@@ -7,9 +7,7 @@ export type Outcome =
   | { kind: "created"; emailSent: boolean }
   | { kind: "resent" }
   | { kind: "resend_failed" }
-  | { kind: "duplicate_email" }
-  | { kind: "ip_flagged" }
-  | { kind: "ip_blocked" };
+  | { kind: "duplicate_email" };
 
 const STALE_PENDING_MS = 2 * 60_000;
 
@@ -46,7 +44,6 @@ async function deliver(store: RegistrationStore, mailer: Mailer, rec: StoredRegi
 export async function register(
   deps: { store: RegistrationStore; mailer: Mailer },
   input: RegistrationInput,
-  ipHash: string | null,
 ): Promise<Outcome> {
   const { store, mailer } = deps;
   const key = emailKey(input.email);
@@ -69,20 +66,17 @@ export async function register(
       return { kind: "duplicate_email" as const };
     }
 
-    const sameIp = ipHash ? firstBy(rows, (r) => r.ipHash === ipHash && r.status !== "DUPLICATE_RACE") : undefined;
-    if (sameIp && ipPolicy() === "block") return { kind: "ip_blocked" as const };
-
-    const flagged = Boolean(sameIp) || !ipHash;
     const rec: RegistrationRecord = {
       id: randomUUID(),
       createdAt: new Date().toISOString(),
-      status: flagged ? "NEEDS_REVIEW" : "ACCEPTED",
+      status: "ACCEPTED",
       fullName: input.fullName,
       email: input.email,
       emailKey: key,
       phone: input.phone,
       item: input.item,
       price: input.price,
+      itemLink: input.itemLink,
       vendorName: input.vendorName,
       vendorPhone: input.vendorPhone,
       vendorSocial: input.vendorSocial,
@@ -90,39 +84,27 @@ export async function register(
       nominationPin: input.nominationPin,
       nominationLat: input.nominationLat ?? "",
       nominationLng: input.nominationLng ?? "",
-      ipHash: ipHash ?? "",
-      emailStatus: flagged ? "SKIPPED" : "PENDING",
+      ipHash: "",
+      emailStatus: "PENDING",
       emailAttempts: 0,
       emailSentAt: "",
       emailError: "",
       stationStatus: "",
       stationEstablishedAt: "",
       stationEmailStatus: "",
-      reviewNote: sameIp ? "Same network as an earlier registration" : !ipHash ? "Client IP could not be determined" : "",
+      rewardAmount: "",
+      reviewNote: "",
     };
     const rowNumber = await store.append(rec);
 
-    // Verify after write: if another instance wrote the same email/IP concurrently, the lower row wins.
+    // Verify after write: if another instance wrote the same email concurrently, the lower row wins.
     const after = await store.list();
     const winner = firstBy(after, (r) => r.emailKey === key && r.status !== "DUPLICATE_RACE");
     if (winner && winner.rowNumber !== rowNumber) {
       await store.update(rowNumber, { status: "DUPLICATE_RACE", emailStatus: "SKIPPED", reviewNote: "Concurrent duplicate email" });
       return { kind: "duplicate_email" as const };
     }
-    let stored: StoredRegistration = { ...rec, rowNumber };
-    if (!flagged && ipHash) {
-      const ipWinner = firstBy(after, (r) => r.ipHash === ipHash && r.status !== "DUPLICATE_RACE");
-      if (ipWinner && ipWinner.rowNumber !== rowNumber) {
-        if (ipPolicy() === "block") {
-          await store.update(rowNumber, { status: "DUPLICATE_RACE", emailStatus: "SKIPPED", reviewNote: "Concurrent same-network entry" });
-          return { kind: "ip_blocked" as const };
-        }
-        stored = { ...stored, status: "NEEDS_REVIEW", emailStatus: "SKIPPED", reviewNote: "Same network as an earlier registration" };
-        await store.update(rowNumber, { status: "NEEDS_REVIEW", emailStatus: "SKIPPED", reviewNote: stored.reviewNote });
-        return { kind: "ip_flagged" as const };
-      }
-    }
-    return flagged ? { kind: "ip_flagged" as const } : { kind: "created" as const, rec: stored };
+    return { kind: "created" as const, rec: { ...rec, rowNumber } as StoredRegistration };
   });
 
   // ---- Phase 2 (outside the lock): email only after the row is safely stored. ----

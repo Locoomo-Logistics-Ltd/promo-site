@@ -3,14 +3,18 @@
 import { useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "motion/react";
 import {
-  AtSign, Crosshair, CircleCheck, Gift, LoaderCircle, Lock, Mail, MapPin, Phone, ShieldCheck, Store, Tag, TriangleAlert, User, Info, Send,
+  AtSign, Link2, Crosshair, CircleCheck, Gift, LoaderCircle, Lock, Mail, MapPin, Phone, ShieldCheck, Store, Tag, TriangleAlert, User, Info, Send,
 } from "lucide-react";
 import Link from "next/link";
 
+import { LOCOOMO_HOST, LOCOOMO_URL, NOT_NOMINATABLE, REWARD_TIERS } from "@/lib/brand";
 import { registrationSchema, fieldErrors, type ApiResult, type FieldErrors } from "@/lib/validation";
 
-type Values = Record<"fullName" | "email" | "phone" | "item" | "price" | "vendorName" | "vendorPhone" | "vendorSocial" | "nomination" | "nominationPin" | "website", string>;
-const EMPTY: Values = { fullName: "", email: "", phone: "", item: "", price: "", vendorName: "", vendorPhone: "", vendorSocial: "", nomination: "", nominationPin: "", website: "" };
+type Values = Record<"fullName" | "email" | "phone" | "item" | "itemLink" | "price" | "vendorName" | "vendorPhone" | "vendorSocial" | "nomination" | "nominationPin" | "website", string>;
+const EMPTY: Values = { fullName: "", email: "", phone: "", item: "", itemLink: "", price: "", vendorName: "", vendorPhone: "", vendorSocial: "", nomination: "", nominationPin: "", website: "" };
+type Flags = { consent: boolean; lagosResident: boolean; stationConfirm: boolean };
+const NO_FLAGS: Flags = { consent: false, lagosResident: false, stationConfirm: false };
+const naira = (n: number) => `₦${n.toLocaleString("en-NG")}`;
 const SUPPORT = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "info@locoomo.com";
 
 function Field({
@@ -43,7 +47,7 @@ function Field({
 export function ApplyForm() {
   const [v, setV] = useState<Values>(EMPTY);
   const [locating, setLocating] = useState(false);
-  const [consent, setConsent] = useState(false);
+  const [flags, setFlags] = useState<Flags>(NO_FLAGS);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(false);
@@ -53,8 +57,8 @@ export function ApplyForm() {
   const inFlight = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
 
-  const validate = (values: Values, c: boolean) => {
-    const r = registrationSchema.safeParse({ ...values, consent: c || undefined });
+  const validate = (values: Values, f: Flags = flags) => {
+    const r = registrationSchema.safeParse({ ...values, consent: f.consent || undefined, lagosResident: f.lagosResident || undefined, stationConfirm: f.stationConfirm });
     const errs = r.success ? ({} as FieldErrors) : fieldErrors(r.error);
     // Cross-field rule: zod only runs it once every other field is valid, so mirror it here for live feedback.
     if (values.nomination.trim() && !values.nominationPin.trim() && !errs.nominationPin) errs.nominationPin = "Paste the shop's location pin so we can find it.";
@@ -63,11 +67,17 @@ export function ApplyForm() {
   const set = (k: keyof Values) => (e: { target: { value: string } }) => {
     const next = { ...v, [k]: e.target.value };
     setV(next);
-    if (touched.has(k)) setErrors(validate(next, consent));
+    if (touched.has(k)) setErrors(validate(next));
+  };
+  const tick = (k: keyof Flags) => (e: { target: { checked: boolean } }) => {
+    const next = { ...flags, [k]: e.target.checked };
+    setFlags(next);
+    setTouched((t) => new Set(t).add(k));
+    setErrors(validate(v, next));
   };
   const blur = (k: string) => () => {
     setTouched((t) => new Set(t).add(k));
-    setErrors(validate(v, consent));
+    setErrors(validate(v));
   };
   const shown = (k: keyof FieldErrors) => (touched.has(k) ? errors[k] : undefined);
 
@@ -79,7 +89,7 @@ export function ApplyForm() {
         const next = { ...v, nominationPin: `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}` };
         setV(next);
         setTouched((t) => new Set(t).add("nominationPin"));
-        setErrors(validate(next, consent));
+        setErrors(validate(next));
         setLocating(false);
       },
       () => { setLocating(false); setErrors((e) => ({ ...e, nominationPin: "We couldn't get your location. Paste the pin link instead." })); setTouched((t) => new Set(t).add("nominationPin")); },
@@ -90,10 +100,10 @@ export function ApplyForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (inFlight.current) return; // blocks double-clicks / Enter-mashing before React re-renders
-    const errs = validate(v, consent);
+    const errs = validate(v);
     setErrors(errs);
     if (Object.keys(errs).length) {
-      setTouched(new Set(Object.keys(EMPTY).concat("consent")));
+      setTouched(new Set(Object.keys(EMPTY).concat("consent", "lagosResident", "stationConfirm")));
       shake();
       document.getElementById(Object.keys(errs)[0])?.focus();
       return;
@@ -105,7 +115,7 @@ export function ApplyForm() {
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...v, consent }),
+        body: JSON.stringify({ ...v, ...flags }),
       });
       const data = (await res.json()) as ApiResult;
       if (data.status === "invalid") {
@@ -123,7 +133,7 @@ export function ApplyForm() {
     }
   }
 
-  const done = result && (result.status === "success" || result.status === "resent" || result.status === "ip_flagged");
+  const done = result && (result.status === "success" || result.status === "resent");
 
   return (
     <div ref={panel} className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-3xl border border-line bg-white p-5 pt-8 shadow-card sm:p-9 sm:pt-11"><div aria-hidden className="candy absolute inset-x-0 top-0" />
@@ -143,6 +153,16 @@ export function ApplyForm() {
             <div className="mb-2">
               <h3 className="text-2xl font-bold">Apply for the Christmas Fund</h3>
               <p className="mt-1 text-ink-2">Takes about two minutes. Don't buy anything until we approve your slot.</p>
+            </div>
+
+            <div className="space-y-3 rounded-2xl bg-surface p-4 text-sm text-ink-2 sm:p-5">
+              <p className="flex items-start gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden /><span><strong className="text-ink">Open to Lagos residents only.</strong> You must live in Lagos to take part.</span></p>
+              <div className="flex items-start gap-2"><Gift className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
+                <div><strong className="text-ink">What you could win</strong>
+                  <ul className="mt-1 space-y-0.5">{REWARD_TIERS.map((t) => <li key={t.label}>{t.label} <span aria-hidden>&ndash;</span><span className="sr-only">:</span> <strong className="text-ink">{naira(t.amount)}</strong></li>)}</ul>
+                </div>
+              </div>
+              <p className="flex items-start gap-2"><User className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden /><span><strong className="text-ink">Sign up on Locoomo.</strong> Create your account at <a href={LOCOOMO_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand underline underline-offset-2">{LOCOOMO_HOST}</a>, and read more about us there.</span></p>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
@@ -172,6 +192,9 @@ export function ApplyForm() {
                   )}
                 </Field>
               </div>
+              <Field id="itemLink" label="Link to the item" icon={Link2} error={shown("itemLink")} hint="The web page or Instagram post where this item is listed.">
+                {(p) => <input {...p} type="url" inputMode="url" autoCapitalize="none" autoComplete="off" value={v.itemLink} onChange={set("itemLink")} onBlur={blur("itemLink")} placeholder="https://…" />}
+              </Field>
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field id="vendorName" label="Vendor name" icon={Store} error={shown("vendorName")}>
                   {(p) => <input {...p} value={v.vendorName} onChange={set("vendorName")} onBlur={blur("vendorName")} placeholder="Ada's Styles" />}
@@ -188,6 +211,10 @@ export function ApplyForm() {
             <fieldset className="space-y-4 rounded-2xl border border-berry/20 bg-[#fff7f8] p-4 sm:p-5">
               <legend className="flex items-center gap-1.5 px-2 font-display text-sm font-bold text-berry"><MapPin className="size-4" aria-hidden />Nominate a Pickup Station</legend>
               <p className="text-sm text-ink-2">Pick a shop, pharmacy or mini-mart near you and send us its <strong className="text-ink">location pin</strong>. That pin is what we'll work with. Optional, but nominations are how slots get unlocked.</p>
+              <div role="note" className="rounded-xl border border-berry/30 bg-white p-3.5 text-sm text-ink-2">
+                <p className="flex items-start gap-2 font-semibold text-berry"><TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />Please check before you nominate</p>
+                <p className="mt-1.5">You can't nominate <strong className="text-ink">{NOT_NOMINATABLE.join(", ")}</strong>, or supermarkets that would take a long time to onboard. Pick an independent shop, pharmacy or mini-mart instead.</p>
+              </div>
               <Field id="nomination" label="Shop name" icon={Store} optional error={shown("nomination")}>
                 {(p) => <input {...p} value={v.nomination} onChange={set("nomination")} onBlur={blur("nomination")} placeholder="e.g. Greenfield Pharmacy" />}
               </Field>
@@ -201,7 +228,15 @@ export function ApplyForm() {
                   {locating ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Crosshair className="size-4" aria-hidden />}I'm at the shop: use my location
                 </button>
               </div>
-              <p className="flex items-start gap-2 rounded-xl bg-white p-3 text-sm text-ink-2"><Gift className="mt-0.5 size-4 shrink-0 text-pine" aria-hidden /><span><strong className="text-ink">Tip:</strong> pop in and put in a good word for us. No negotiating, no paperwork. Just get them curious. We'll handle the rest.</span></p>
+              <div>
+                <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-ink-2">
+                  <input id="stationConfirm" type="checkbox" checked={flags.stationConfirm} className="mt-1 size-5 shrink-0 accent-[#006cdf]"
+                    aria-invalid={shown("stationConfirm") ? true : undefined} aria-describedby={shown("stationConfirm") ? "stationConfirm-err" : undefined} onChange={tick("stationConfirm")} />
+                  <span>I confirm the shop I'm nominating is not {NOT_NOMINATABLE.join(", ")} or a large supermarket chain.</span>
+                </label>
+                {shown("stationConfirm") && <p id="stationConfirm-err" role="alert" className="mt-1.5 flex items-center gap-1.5 text-sm font-medium text-berry"><TriangleAlert className="size-4" aria-hidden />{shown("stationConfirm")}</p>}
+              </div>
+              <p className="flex items-start gap-2 rounded-xl bg-white p-3 text-sm text-ink-2"><Gift className="mt-0.5 size-4 shrink-0 text-pine" aria-hidden /><span><strong className="text-ink">Tip:</strong> pop in and speak to the <strong className="text-ink">manager or owner</strong>, not just any staff member, and recommend Locoomo. No negotiating, no paperwork. Just get them curious. We'll handle the rest.</span></p>
             </fieldset>
 
             {/* Honeypot: hidden from people and assistive tech */}
@@ -211,10 +246,19 @@ export function ApplyForm() {
 
             <div>
               <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-ink-2">
+                <input id="lagosResident" type="checkbox" checked={flags.lagosResident} className="mt-1 size-5 shrink-0 accent-[#006cdf]"
+                  aria-invalid={shown("lagosResident") ? true : undefined} aria-describedby={shown("lagosResident") ? "lagosResident-err" : undefined} onChange={tick("lagosResident")} />
+                <span>I live in Lagos. This promo is open to Lagos residents only.</span>
+              </label>
+              {shown("lagosResident") && <p id="lagosResident-err" role="alert" className="mt-1.5 flex items-center gap-1.5 text-sm font-medium text-berry"><TriangleAlert className="size-4" aria-hidden />{shown("lagosResident")}</p>}
+            </div>
+
+            <div>
+              <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-ink-2">
                 <input
-                  id="consent" type="checkbox" checked={consent} className="mt-1 size-5 shrink-0 accent-[#006cdf]"
+                  id="consent" type="checkbox" checked={flags.consent} className="mt-1 size-5 shrink-0 accent-[#006cdf]"
                   aria-invalid={shown("consent") ? true : undefined} aria-describedby={shown("consent") ? "consent-err" : undefined}
-                  onChange={(e) => { setConsent(e.target.checked); setTouched((t) => new Set(t).add("consent")); setErrors(validate(v, e.target.checked)); }}
+                  onChange={tick("consent")}
                 />
                 <span>
                   I've read the <Link href="/privacy" target="_blank" className="font-semibold text-brand underline underline-offset-2">privacy notice</Link> and understand
@@ -243,7 +287,7 @@ export function ApplyForm() {
 }
 
 function Banner({ result }: { result: ApiResult }) {
-  const warn = result.status === "duplicate_email" || result.status === "ip_blocked";
+  const warn = result.status === "duplicate_email";
   const Icon = warn ? Info : TriangleAlert;
   return (
     <motion.div
@@ -254,7 +298,6 @@ function Banner({ result }: { result: ApiResult }) {
       {result.status === "error" && result.detail && (
         <p className="mt-2 rounded-lg bg-white/60 p-2 pl-3 font-mono text-xs break-words">Dev details: {result.detail}</p>
       )}
-      {result.status === "ip_blocked" && <Help />}
       {result.status === "duplicate_email" && (
         <p className="mt-2 pl-7">Can't find our email? Check spam, or contact <a className="font-semibold underline" href={`mailto:${SUPPORT}`}>{SUPPORT}</a>.</p>
       )}
@@ -262,40 +305,30 @@ function Banner({ result }: { result: ApiResult }) {
   );
 }
 
-function Help() {
-  return (
-    <p className="mt-2 pl-7">
-      Think this is a mistake? Email <a className="font-semibold underline" href={`mailto:${SUPPORT}?subject=Registration%20review%20request`}>{SUPPORT}</a> from
-      the address you applied with and tell us who else shares your network. A person will review it.
-    </p>
-  );
-}
-
 function Outcome({ result }: { result: ApiResult }) {
-  const flagged = result.status === "ip_flagged";
   const emailFailed = result.status === "success" && !result.emailSent;
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="py-6 text-center" role="status">
       <div className="relative mx-auto grid size-24 place-items-center">
-        {!flagged && [0, 1, 2].map((i) => (
+        {[0, 1, 2].map((i) => (
           <motion.span key={i} aria-hidden className="absolute inset-0 rounded-full border-2 border-pine/40"
             initial={{ scale: 0.6, opacity: 0.8 }} animate={{ scale: 1.7, opacity: 0 }} transition={{ duration: 1.6, delay: 0.3 + i * 0.35, repeat: 1 }} />
         ))}
         <motion.div initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 220, damping: 14 }}
-          className={`grid size-20 place-items-center rounded-full text-white ${flagged ? "bg-gold" : "bg-pine"}`}>
-          {flagged ? <ShieldCheck className="size-10 text-navy" aria-hidden /> : <CircleCheck className="size-10" aria-hidden />}
+          className={`grid size-20 place-items-center rounded-full text-white bg-pine`}>
+          <CircleCheck className="size-10" aria-hidden />
         </motion.div>
       </div>
       <h3 className="mt-6 text-2xl font-bold sm:text-3xl">
-        {flagged ? "Saved, and held for a quick review" : result.status === "resent" ? "Confirmation re-sent" : "You're on the list!"}
+        {result.status === "resent" ? "Confirmation re-sent" : "You're on the list!"}
       </h3>
       <p className="mx-auto mt-3 max-w-md leading-relaxed text-ink-2">{result.message}</p>
-      {flagged && <div className="mx-auto mt-3 max-w-md text-left text-sm text-ink-2"><Help /></div>}
-      {!flagged && (
+      {(
         <ul className="mx-auto mt-7 max-w-md space-y-3 text-left text-sm text-ink-2">
           {[
             [Mail, emailFailed ? "Resubmit this form with the same email to get your confirmation email. You won't be entered twice." : "Check your inbox (and spam) for your confirmation email."],
-            [MapPin, "We'll review your Pickup Station nomination and speak with the business."],
+            [MapPin, "Pop into your nominated shop, speak to the manager or owner (not just any staff member) and recommend Locoomo. It speeds things up."],
+            [User, `Sign up on Locoomo at ${LOCOOMO_HOST} and read more about us while you wait.`],
             [ShieldCheck, "Please don't buy anything until we email you: “You're approved. Go shopping.”"],
           ].map(([I, t], i) => {
             const Icon = I as typeof Mail;

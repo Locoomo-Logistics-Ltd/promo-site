@@ -11,6 +11,7 @@ export interface RegistrationRecord {
   phone: string;
   item: string;
   price: number;
+  itemLink: string;
   vendorName: string;
   vendorPhone: string;
   vendorSocial: string;
@@ -27,6 +28,8 @@ export interface RegistrationRecord {
   stationStatus: "" | "ESTABLISHED";
   stationEstablishedAt: string;
   stationEmailStatus: "" | "PENDING" | "SENT" | "FAILED";
+  /** Prize (NGN) the admin awarded when marking the station established; "" until then. */
+  rewardAmount: number | "";
 }
 
 export interface StoredRegistration extends RegistrationRecord {

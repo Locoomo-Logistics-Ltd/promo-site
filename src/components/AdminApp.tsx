@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  BadgeCheck, CircleCheck, Download, ExternalLink, LoaderCircle, LogOut, Lock, MapPin, Search, Send, TriangleAlert, RefreshCw, Mail, Phone, Store, AtSign, Tag, User, Users,
+  BadgeCheck, CircleCheck, Download, ExternalLink, LoaderCircle, LogOut, Lock, MapPin, Search, Send, TriangleAlert, RefreshCw, Mail, Phone, Store, AtSign, Tag, User, Users, Trophy, Link2,
 } from "lucide-react";
+import { REWARD_TIERS } from "@/lib/brand";
 import { Logo } from "./ui";
 import { Team } from "./AdminTeam";
 
 type Row = {
-  id: string; createdAt: string; status: "ACCEPTED" | "NEEDS_REVIEW"; fullName: string; email: string; phone: string; item: string; price: number;
+  id: string; createdAt: string; status: "ACCEPTED" | "NEEDS_REVIEW"; fullName: string; email: string; phone: string; item: string; itemLink: string; price: number;
   vendorName: string; vendorPhone: string; vendorSocial: string; nomination: string; nominationPin: string; nominationLat: number | ""; nominationLng: number | "";
-  emailStatus: string; reviewNote: string; stationStatus: "" | "ESTABLISHED"; stationEstablishedAt: string; stationEmailStatus: "" | "SENT" | "FAILED";
+  emailStatus: string; reviewNote: string; stationStatus: "" | "ESTABLISHED"; stationEstablishedAt: string; stationEmailStatus: "" | "SENT" | "FAILED"; rewardAmount: number | "";
 };
 
 const naira = (n: number) => `₦${n.toLocaleString("en-NG")}`;
@@ -151,6 +152,8 @@ function Dashboard({ rows, onChange }: { rows: Row[]; onChange: (r: Row) => void
         ))}
       </dl>
 
+      <Winners rows={rows} />
+
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
@@ -162,7 +165,7 @@ function Dashboard({ rows, onChange }: { rows: Row[]; onChange: (r: Row) => void
           <option value="pending-station">Station nominated, not yet established</option>
           <option value="established">Station established</option>
           <option value="no-station">No station nominated</option>
-          <option value="review">Needs review (same network)</option>
+          <option value="review">Needs review</option>
         </select>
         <a href="/api/admin/registrations/export" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-navy px-4 text-sm font-semibold text-white hover:bg-navy-2"><Download className="size-4" aria-hidden />CSV</a>
       </div>
@@ -176,12 +179,50 @@ function Dashboard({ rows, onChange }: { rows: Row[]; onChange: (r: Row) => void
   );
 }
 
+/** Everyone who has been told what they won, grouped by prize category, with totals. */
+function Winners({ rows }: { rows: Row[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const winners = rows.filter((r) => r.stationStatus === "ESTABLISHED" && typeof r.rewardAmount === "number");
+  const total = winners.reduce((n, r) => n + (r.rewardAmount as number), 0);
+  const groups = REWARD_TIERS.map((t) => ({ ...t, list: winners.filter((r) => r.rewardAmount === t.amount) }));
+  return (
+    <section aria-label="Winners" className="mt-4 rounded-2xl border border-line bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 font-display text-lg font-bold"><Trophy className="size-5 text-gold" aria-hidden />Winners</h2>
+        <p className="text-sm text-ink-2">{winners.length} winner{winners.length === 1 ? "" : "s"} · total awarded <strong className="font-display text-xl text-ink">{naira(total)}</strong></p>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        {groups.map((g) => (
+          <button key={g.amount} type="button" onClick={() => setOpen(open === g.amount ? null : g.amount)} aria-expanded={open === g.amount}
+            className={`rounded-xl border p-4 text-left transition hover:border-brand ${open === g.amount ? "border-brand bg-brand/5" : "border-line bg-surface"}`}>
+            <p className="text-xs font-bold uppercase tracking-wider text-ink-3">{g.label} · {naira(g.amount)}</p>
+            <p className="mt-1 font-display text-2xl font-extrabold">{g.list.length}<span className="text-base font-semibold text-ink-3"> / {g.slots}</span></p>
+            <p className={`text-sm font-semibold ${g.list.length > g.slots ? "text-berry" : "text-ink-2"}`}>{naira(g.list.length * g.amount)}{g.list.length > g.slots ? " · over the slot limit" : ""}</p>
+          </button>
+        ))}
+      </div>
+      {open !== null && (
+        <ul className="mt-4 divide-y divide-line rounded-xl border border-line text-sm">
+          {groups.find((g) => g.amount === open)!.list.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+              <span><strong>{r.fullName}</strong> <span className="text-ink-3">· {r.email}</span></span>
+              <span className="font-semibold">{naira(r.rewardAmount as number)}{r.stationEmailStatus === "FAILED" && <span className="ml-2 text-berry">email failed</span>}</span>
+            </li>
+          ))}
+          {!groups.find((g) => g.amount === open)!.list.length && <li className="px-4 py-3 text-ink-3">No winners in this category yet.</li>}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Detail({ icon: Icon, label, children }: { icon: typeof User; label: string; children: React.ReactNode }) {
   return <div className="min-w-0"><dt className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-3"><Icon className="size-3.5" aria-hidden />{label}</dt><dd className="mt-0.5 break-words text-sm font-medium">{children || <span className="text-ink-3">-</span>}</dd></div>;
 }
 
 function Card({ r, onChange }: { r: Row; onChange: (r: Row) => void }) {
   const [confirm, setConfirm] = useState(false);
+  const [amount, setAmount] = useState<number | "">(r.rewardAmount);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const hasStation = Boolean(r.nomination || r.nominationPin);
@@ -191,11 +232,12 @@ function Card({ r, onChange }: { r: Row; onChange: (r: Row) => void }) {
 
   async function establish() {
     setBusy(true); setMsg(null);
-    const { res, data } = await api(`/api/admin/registrations/${r.id}/station`, { method: "POST" });
+    const { res, data } = await api(`/api/admin/registrations/${r.id}/station`, { method: "POST", body: JSON.stringify({ amount }) });
     setBusy(false); setConfirm(false);
     setMsg({ ok: res.ok, text: data.message ?? data.error ?? "Something went wrong." });
-    if (data.result === "notified" || data.result === "already_notified") onChange({ ...r, stationStatus: "ESTABLISHED", stationEmailStatus: "SENT", stationEstablishedAt: data.at ?? new Date().toISOString() });
-    else if (data.result === "email_failed") onChange({ ...r, stationStatus: "ESTABLISHED", stationEmailStatus: "FAILED", stationEstablishedAt: data.at ?? new Date().toISOString() });
+    if (data.result === "notified") onChange({ ...r, rewardAmount: amount, stationStatus: "ESTABLISHED", stationEmailStatus: "SENT", stationEstablishedAt: data.at ?? new Date().toISOString() });
+    else if (data.result === "already_notified") onChange({ ...r, stationStatus: "ESTABLISHED", stationEmailStatus: "SENT", stationEstablishedAt: data.at ?? new Date().toISOString() });
+    else if (data.result === "email_failed") onChange({ ...r, rewardAmount: amount, stationStatus: "ESTABLISHED", stationEmailStatus: "FAILED", stationEstablishedAt: data.at ?? new Date().toISOString() });
   }
 
   const badge = (t: string, c: string) => <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${c}`}>{t}</span>;
@@ -218,6 +260,8 @@ function Card({ r, onChange }: { r: Row; onChange: (r: Row) => void }) {
         <Detail icon={Mail} label="Email"><a className="text-brand underline" href={`mailto:${r.email}`}>{r.email}</a></Detail>
         <Detail icon={Phone} label="Phone"><a className="text-brand underline" href={`tel:${r.phone}`}>{r.phone}</a></Detail>
         <Detail icon={Tag} label="Item">{r.item} · <strong>{naira(r.price)}</strong></Detail>
+        {typeof r.rewardAmount === "number" && <Detail icon={Trophy} label="Won"><strong className="text-pine">{naira(r.rewardAmount)}</strong></Detail>}
+        <Detail icon={Link2} label="Item link">{/^https?:\/\//i.test(r.itemLink) && <a className="text-brand underline" href={r.itemLink} target="_blank" rel="noopener noreferrer">Open item</a>}</Detail>
         <Detail icon={Store} label="Vendor">{r.vendorName}</Detail>
         <Detail icon={Phone} label="Vendor phone">{r.vendorPhone && <a className="text-brand underline" href={`tel:${r.vendorPhone}`}>{r.vendorPhone}</a>}</Detail>
         <Detail icon={AtSign} label="Vendor social">{socialHref(r.vendorSocial) ? <a className="text-brand underline" href={socialHref(r.vendorSocial)!} target="_blank" rel="noopener noreferrer">{r.vendorSocial}</a> : r.vendorSocial}</Detail>
@@ -251,10 +295,16 @@ function Card({ r, onChange }: { r: Row; onChange: (r: Row) => void }) {
           {confirm && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
               <div role="alertdialog" aria-label="Confirm" className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-pine/30 bg-white p-3 text-sm">
-                <span className="flex-1">This emails <strong>{r.email}</strong> that their Pickup Station is live. Continue?</span>
+                <span className="flex-1">This emails <strong>{r.email}</strong> that their Pickup Station is live and how much they won.</span>
+                <label className="flex items-center gap-2 font-semibold">Amount won
+                  <select value={amount} onChange={(e) => setAmount(e.target.value ? Number(e.target.value) : "")} disabled={busy} className="rounded-lg border border-line bg-white px-3 py-2">
+                    <option value="">Choose…</option>
+                    {REWARD_TIERS.map((t) => <option key={t.amount} value={t.amount}>{naira(t.amount)} ({t.label})</option>)}
+                  </select>
+                </label>
                 <button onClick={() => setConfirm(false)} disabled={busy} className="min-h-10 rounded-full px-4 font-semibold text-ink-2 hover:bg-surface">Cancel</button>
-                <button onClick={establish} disabled={busy} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-pine px-5 font-bold text-white disabled:opacity-70">
-                  {busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Send className="size-4" aria-hidden />}Send email
+                <button onClick={establish} disabled={busy || amount === ""} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-pine px-5 font-bold text-white disabled:opacity-70">
+                  {busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Send className="size-4" aria-hidden />}Send prize email
                 </button>
               </div>
             </motion.div>

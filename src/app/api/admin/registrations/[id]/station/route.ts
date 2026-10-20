@@ -11,15 +11,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!sameOrigin(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
+  const body = (await req.json().catch(() => ({}))) as { amount?: unknown };
   try {
-    const r = await markStationEstablished(getDeps(), id);
+    const r = await markStationEstablished(getDeps(), id, Number(body.amount));
     const map = {
-      notified: [200, "Station marked as established and the participant has been emailed."],
+      notified: [200, "Station marked as established and the participant has been emailed their prize."],
       in_progress: [409, "An email for this station is already being sent."],
       already_notified: [409, "This participant has already been told their station is live."],
       email_failed: [502, "Station marked as established, but the email failed. Press the button again to retry."],
       not_found: [404, "Registration not found."],
       no_station: [422, "This participant didn't nominate a Pickup Station."],
+      bad_amount: [422, "Choose the amount this participant won."],
     } as const;
     const [status, message] = map[r.kind];
     return NextResponse.json({ result: r.kind, message, at: "at" in r ? r.at : undefined }, { status });

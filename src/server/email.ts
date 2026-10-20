@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { env } from "./config";
+import { LOCOOMO_HOST, LOCOOMO_URL, REWARD_TIERS } from "@/lib/brand";
 import type { Mailer, RegistrationRecord } from "./types";
 
 const esc = (s: string) =>
@@ -62,6 +63,14 @@ export async function postEmail(o: { to: string; subject: string; html: string; 
 
 const naira = (n: number) => `₦${n.toLocaleString("en-NG")}`;
 
+const safeLink = (u: string) => (/^https?:\/\//i.test(u) ? esc(u) : "");
+
+/** "Sign up on Locoomo + learn about us" block, shared by both participant emails. */
+const signupBlock = () => `<div style="margin:0 0 22px;padding:14px 16px;border-radius:12px;background:#EAF3FF;border:1px solid #BBD7F8;font:14px/1.55 Arial,sans-serif;color:#0b3a73">
+        <strong>Sign up on Locoomo.</strong> Create your account at <a href="${LOCOOMO_URL}" style="color:#006CDF;font-weight:700">${LOCOOMO_HOST}</a> so you're ready to collect your package. New to us? Visit <a href="${LOCOOMO_URL}" style="color:#006CDF">${LOCOOMO_HOST}</a> to see how Locoomo works.
+      </div>`;
+const signupText = `Sign up on Locoomo: create your account at ${LOCOOMO_URL} so you're ready to collect your package. Want to know us better? Everything about Locoomo is at ${LOCOOMO_URL}.`;
+
 export function confirmationEmail(r: RegistrationRecord, siteUrl: string, support: string) {
   const first = esc(r.fullName.split(" ")[0]);
   const step = (n: number, title: string, body: string) => `
@@ -83,7 +92,7 @@ export function confirmationEmail(r: RegistrationRecord, siteUrl: string, suppor
     <tr><td style="padding:28px 32px 8px">
       <p style="margin:0 0 18px;font:15px/1.6 Arial,sans-serif;color:#3a5075">Thanks for applying. Your entry has been received. It does <strong>not</strong> mean you've been selected yet. Slots are limited and your Pickup Station has to be activated first.</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fc;border-radius:12px;padding:12px 18px;margin-bottom:22px">
-        ${row("Item", r.item)}${row("Price", naira(r.price))}${row("Vendor", r.vendorName)}${r.nomination || r.nominationPin ? row("Pickup Station", r.nomination || "Location pin received") : ""}${row("Reference", r.id.slice(0, 8).toUpperCase())}
+        ${row("Item", r.item)}${safeLink(r.itemLink ?? "") ? `<tr><td style="padding:6px 0;font:13px Arial,sans-serif;color:#7a8fa8;width:110px">Item link</td><td style="padding:6px 0;font:14px Arial,sans-serif;font-weight:600;word-break:break-all"><a href="${safeLink(r.itemLink)}" style="color:#006CDF">${safeLink(r.itemLink)}</a></td></tr>` : ""}${row("Price", naira(r.price))}${row("Vendor", r.vendorName)}${r.nomination || r.nominationPin ? row("Pickup Station", r.nomination || "Location pin received") : ""}${row("Reference", r.id.slice(0, 8).toUpperCase())}
       </table>
       <div style="font:700 17px Arial,sans-serif;color:#000E2E;margin-bottom:14px">What happens next</div>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
@@ -92,6 +101,13 @@ export function confirmationEmail(r: RegistrationRecord, siteUrl: string, suppor
         ${step(3, "We approve your slot", "If your station goes live and a slot is available, we'll email you: &ldquo;You're approved. Go shopping.&rdquo;")}
         ${step(4, "You shop, we move it", "Your vendor prepares the order and Locoomo delivers it to your Pickup Station for free.")}
       </table>
+      ${r.nomination || r.nominationPin ? `<div style="margin:8px 0 18px;padding:14px 16px;border-radius:12px;background:#EEFAF3;border:1px solid #B9E3CB;font:14px/1.55 Arial,sans-serif;color:#14502f">
+        <strong>One quick thing: visit your Pickup Station.</strong> Please go to <strong>${esc(r.nomination || "the shop you nominated")}</strong> and speak to the <strong>manager or owner</strong>, not just any staff member. Tell them about Locoomo and recommend us. A decision-maker who knows us makes it much faster for our team to bring that shop on board.
+      </div>` : ""}
+      <div style="margin:8px 0 18px;padding:14px 16px;border-radius:12px;background:#f4f7fc;font:14px/1.7 Arial,sans-serif;color:#3a5075">
+        <strong style="color:#000E2E">What's up for grabs</strong><br>${REWARD_TIERS.map((t) => `${t.label} &ndash; <strong>${naira(t.amount)}</strong>`).join("<br>")}
+      </div>
+      ${signupBlock()}
       <div style="margin:8px 0 22px;padding:14px 16px;border-radius:12px;background:#FFF6E0;border:1px solid #F2D58A;font:14px/1.55 Arial,sans-serif;color:#5a4300">
         <strong>The most important rule:</strong> please don't buy anything until Locoomo approves your shopping slot. Purchases made before approval may not qualify for funding.
       </div>
@@ -106,7 +122,7 @@ export function confirmationEmail(r: RegistrationRecord, siteUrl: string, suppor
 
 Your entry to the Locoomo Christmas Shopping Fund has been received. It does not mean you've been selected yet.
 
-Item: ${r.item}
+Item: ${r.item}${r.itemLink ? `\nItem link: ${r.itemLink}` : ""}
 Price: ${naira(r.price)}
 Vendor: ${r.vendorName}
 Reference: ${r.id.slice(0, 8).toUpperCase()}
@@ -116,6 +132,11 @@ What happens next:
 2. We speak with the business you nominated about becoming a Locoomo Pickup Station.
 3. If your station goes live and a slot is available, we'll email you: "You're approved. Go shopping."
 4. You shop, and we deliver to your Pickup Station for free.
+
+${r.nomination || r.nominationPin ? `ONE QUICK THING: please visit ${r.nomination || "the shop you nominated"} and speak to the manager or owner, not just any staff member. Tell them about Locoomo and recommend us. It makes onboarding much faster.\n\n` : ""}What's up for grabs:
+${REWARD_TIERS.map((t) => `${t.label} - ${naira(t.amount)}`).join("\n")}
+
+${signupText}
 
 IMPORTANT: Please don't buy anything until Locoomo approves your shopping slot.
 
@@ -130,17 +151,24 @@ export function stationLiveEmail(r: RegistrationRecord, siteUrl: string, support
   const first = esc(r.fullName.split(" ")[0]);
   const shop = esc(r.nomination || "the shop you nominated");
   const map = /^https:\/\//.test(r.nominationPin) ? esc(r.nominationPin) : "";
+  const prize = typeof r.rewardAmount === "number" ? naira(r.rewardAmount) : "";
   const html = `<!doctype html><html><body style="margin:0;background:#eef3fb;padding:24px 12px">
-  <div style="display:none;max-height:0;overflow:hidden">Your nominated Pickup Station is live.</div>
+  <div style="display:none;max-height:0;overflow:hidden">Your nominated Pickup Station is live${prize ? ` and you've won ${prize}` : ""}.</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:16px;overflow:hidden">
     ${head(siteUrl, `Great news, ${first}. Your Pickup Station is live.`)}
     <tr><td style="height:4px;background:linear-gradient(90deg,#C8102E,#F2B84B,#1F7A4D)"></td></tr>
     <tr><td style="padding:28px 32px 8px">
       <p style="margin:0 0 18px;font:15px/1.6 Arial,sans-serif;color:#3a5075">The Pickup Station you nominated, <strong style="color:#000E2E">${shop}</strong>, is now a Locoomo Pickup Station. Thank you for helping us bring one to your neighbourhood.</p>
+      ${prize ? `<div style="margin:0 0 20px;padding:18px;border-radius:14px;background:#000E2E;text-align:center">
+        <div style="font:700 12px Arial,sans-serif;color:#F2B84B;letter-spacing:1.2px">YOU'VE WON</div>
+        <div style="margin-top:6px;font:800 36px Arial,sans-serif;color:#fff">${prize}</div>
+        <div style="margin-top:6px;font:13px/1.5 Arial,sans-serif;color:#c9d6ea">toward your approved purchase, paid to your vendor, never as cash.</div>
+      </div>` : ""}
       ${map ? `<p style="margin:0 0 22px"><a href="${map}" style="display:inline-block;background:#006CDF;color:#fff;font:700 14px Arial,sans-serif;text-decoration:none;padding:12px 22px;border-radius:999px">View the Pickup Station on the map</a></p>` : ""}
       <div style="font:700 17px Arial,sans-serif;color:#000E2E;margin-bottom:10px">What this means for you</div>
       <p style="margin:0 0 14px;font:15px/1.6 Arial,sans-serif;color:#3a5075">This is where your package will be delivered, and where you'll go to collect it. When your package arrives, we'll email you that it's ready, and you'll verify your collection at the station.</p>
+      ${signupBlock()}
       <div style="margin:8px 0 22px;padding:14px 16px;border-radius:12px;background:#FFF6E0;border:1px solid #F2D58A;font:14px/1.55 Arial,sans-serif;color:#5a4300">
         <strong>Still the most important rule:</strong> please don't buy anything until we confirm your shopping slot. We'll tell you: &ldquo;You're approved. Go shopping.&rdquo;
       </div>
@@ -149,15 +177,17 @@ export function stationLiveEmail(r: RegistrationRecord, siteUrl: string, support
     <tr><td style="background:#f4f7fc;padding:18px 32px;font:12px/1.6 Arial,sans-serif;color:#7a8fa8">You're receiving this because you nominated a Pickup Station in the Locoomo Christmas Shopping Fund. <a href="${siteUrl}/privacy" style="color:#006CDF">Privacy notice</a></td></tr>
   </table></td></tr></table></body></html>`;
   const text = `Great news, ${r.fullName.split(" ")[0]}. Your Pickup Station is live.
-
+${prize ? `\nYOU'VE WON ${prize}, toward your approved purchase (paid to your vendor, never as cash).\n` : ""}
 The Pickup Station you nominated, ${r.nomination || "the shop you nominated"}, is now a Locoomo Pickup Station.
 ${map ? `Map: ${r.nominationPin}\n` : ""}
 This is where your package will be delivered and where you'll collect it. We'll email you when your package is ready.
 
+${signupText}
+
 Still the most important rule: please don't buy anything until we confirm your shopping slot ("You're approved. Go shopping.").
 
 Reference: ${r.id.slice(0, 8).toUpperCase()}. Questions: ${support}`;
-  return { subject: "Your Locoomo Pickup Station is live", html, text };
+  return { subject: prize ? `Your Pickup Station is live. You won ${prize}!` : "Your Locoomo Pickup Station is live", html, text };
 }
 
 const urls = () => ({

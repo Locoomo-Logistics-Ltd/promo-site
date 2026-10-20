@@ -216,8 +216,8 @@ export function FairPlay() {
           <div className="mt-10 grid gap-4 rounded-3xl border border-line p-6 sm:grid-cols-3 sm:p-8">
             {[
               [Users, "One entry per email", "Each email address can apply once. Variants such as name+tag@ or dots in Gmail addresses count as the same address."],
-              [Eye, "Network checks, not accusations", "Households, offices and mobile networks share connections. If another entry came from yours, we review it by hand rather than rejecting you."],
-              [Lock, "Private by design", "Your network address is stored only as a one-way hash, used for verification and fraud prevention, and never shared."],
+              [Eye, "Checked by people", "Every Pickup Station and purchase is reviewed by the Locoomo team before anything goes live."],
+              [Lock, "Private by design", "Your details are used only to run this campaign and are never sold or shared with other applicants."],
             ].map(([I, t, d]) => {
               const Icon = I as typeof Users;
               return <div key={t as string}><Icon className="size-6 text-brand" aria-hidden /><p className="mt-3 font-display font-bold">{t as string}</p><p className="mt-1 text-sm leading-relaxed text-ink-2">{d as string}</p></div>;

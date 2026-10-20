@@ -31,5 +31,4 @@ export const FAQ: { q: string; a: string[] }[] = [
   { q: "When do applications open?", a: ["November 1. But we'll start talking about the campaign from October so you have plenty of time to understand it and get ready."] },
   { q: "Why are you starting so early?", a: ["Because Pickup Stations need to be properly set up before Christmas packages start moving. We don't want to rush your package.", "November = build the network. December = shop and deliver."] },
   { q: "When should I apply?", a: ["As early as possible. Campaign slots are limited and activating a Pickup Station takes time. Waiting until the middle of December is a bad strategy."] },
-  { q: "I applied and was told my registration was flagged. What now?", a: ["Several people can legitimately share a home, office or mobile network, so a flag is a prompt for a human check, not an accusation. Email us from the address you applied with, tell us who else may have applied from your network, and we'll review it. Nothing you've submitted is lost while we check."] },
 ];

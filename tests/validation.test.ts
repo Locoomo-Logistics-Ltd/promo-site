@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { registrationSchema, emailKey, normalizePhone, normalizeSocial } from "@/lib/validation";
+import { registrationSchema, emailKey, normalizePhone, normalizeSocial, normalizeLink } from "@/lib/validation";
 
 const base = {
-  fullName: "Ada Obi", email: "Ada@Example.com", phone: "0803 123 4567", item: "Ankara dress", price: "12500",
+  fullName: "Ada Obi", email: "Ada@Example.com", phone: "0803 123 4567", item: "Ankara dress", price: "12500", itemLink: "https://shop.example/dress", lagosResident: true,
   vendorName: "Ada Styles", vendorPhone: "", vendorSocial: "@adastyles", nomination: "", consent: true, website: "",
 };
 const priceErr = (price: unknown) => {
@@ -50,7 +50,7 @@ describe("fields", () => {
 });
 
 describe("location pin", () => {
-  const parse = (o: object) => registrationSchema.safeParse({ ...base, ...o });
+  const parse = (o: object) => registrationSchema.safeParse({ ...base, stationConfirm: true, ...o });
   const good = [
     "https://maps.app.goo.gl/AbCdEf123",
     "https://www.google.com/maps/place/Shop/@6.5069,3.3781,17z/data=!3m1",
@@ -69,8 +69,32 @@ describe("location pin", () => {
   for (const b of badPins) it(`rejects ${b}`, () => expect(parse({ nominationPin: b }).success).toBe(false));
   it("requires a pin when a shop is named", () => expect(parse({ nomination: "Green Pharmacy" }).success).toBe(false));
   it("extracts coordinates", () => {
-    const r = registrationSchema.parse({ ...base, nominationPin: "https://www.google.com/maps/place/X/@6.5069,3.3781,17z" });
+    const r = registrationSchema.parse({ ...base, stationConfirm: true, nominationPin: "https://www.google.com/maps/place/X/@6.5069,3.3781,17z" });
     expect([r.nominationLat, r.nominationLng]).toEqual([6.5069, 3.3781]);
-    expect(registrationSchema.parse({ ...base, nominationPin: "6.5, 3.3" }).nominationPin).toContain("google.com/maps?q=6.5,3.3");
+    expect(registrationSchema.parse({ ...base, stationConfirm: true, nominationPin: "6.5, 3.3" }).nominationPin).toContain("google.com/maps?q=6.5,3.3");
+  });
+});
+
+describe("item link, Lagos and station confirmation", () => {
+  const err = (over: object, key: string) => {
+    const r = registrationSchema.safeParse({ ...base, ...over });
+    return r.success ? null : r.error.issues.find((i) => i.path[0] === key)?.message ?? null;
+  };
+  it("requires a valid item link and normalizes it", () => {
+    expect(err({ itemLink: "" }, "itemLink")).toBeTruthy();
+    expect(err({ itemLink: "not a link" }, "itemLink")).toBeTruthy();
+    expect(err({ itemLink: "javascript:alert(1)" }, "itemLink")).toBeTruthy();
+    expect(normalizeLink("shop.example/item/1")).toBe("https://shop.example/item/1");
+    expect(registrationSchema.parse({ ...base }).itemLink).toBe("https://shop.example/dress");
+  });
+  it("requires Lagos residence", () => {
+    expect(err({ lagosResident: undefined }, "lagosResident")).toBeTruthy();
+    expect(err({ lagosResident: false }, "lagosResident")).toBeTruthy();
+  });
+  it("requires the excluded-partners confirmation only when a station is nominated", () => {
+    expect(err({}, "stationConfirm")).toBeNull();
+    const nominated = { nomination: "Green Pharmacy", nominationPin: "6.5, 3.3" };
+    expect(err(nominated, "stationConfirm")).toBeTruthy();
+    expect(err({ ...nominated, stationConfirm: true }, "stationConfirm")).toBeNull();
   });
 });
