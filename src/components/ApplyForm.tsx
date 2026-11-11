@@ -10,6 +10,15 @@ import Link from "next/link";
 import { LOCOOMO_HOST, LOCOOMO_URL, NOT_NOMINATABLE, REWARD_TIERS } from "@/lib/brand";
 import { registrationSchema, fieldErrors, type ApiResult, type FieldErrors } from "@/lib/validation";
 
+declare global {
+  interface Window {
+    EasyEasy?: {
+      initialized?: boolean;
+      track: (event: string, data: { order_id: string }) => void;
+    };
+  }
+}
+
 type Values = Record<"fullName" | "email" | "phone" | "item" | "itemLink" | "price" | "vendorName" | "vendorPhone" | "vendorSocial" | "nomination" | "nominationPin" | "website", string>;
 const EMPTY: Values = { fullName: "", email: "", phone: "", item: "", itemLink: "", price: "", vendorName: "", vendorPhone: "", vendorSocial: "", nomination: "", nominationPin: "", website: "" };
 type Flags = { consent: boolean; lagosResident: boolean; stationConfirm: boolean };
@@ -123,6 +132,11 @@ export function ApplyForm() {
         setTouched(new Set(Object.keys(data.errors)));
         shake();
       }
+      if ((data.status === "success" || data.status === "resent") && data.id) {
+        window.EasyEasy?.track("signup", {
+          order_id: data.id,
+        });
+      }
       setResult(data);
     } catch {
       setResult({ status: "error", message: "We couldn't reach the server. Check your connection and try again. If you already pressed submit, resubmitting is safe: you won't be entered twice." });
@@ -210,17 +224,17 @@ export function ApplyForm() {
 
             <fieldset className="space-y-4 rounded-2xl border border-berry/20 bg-[#fff7f8] p-4 sm:p-5">
               <legend className="flex items-center gap-1.5 px-2 font-display text-sm font-bold text-berry"><MapPin className="size-4" aria-hidden />Nominate a Pickup Station</legend>
-              <p className="text-sm text-ink-2">Pick a shop, pharmacy or mini-mart near you and send us its <strong className="text-ink">location pin</strong>. That pin is what we'll work with. Optional, but nominations are how slots get unlocked.</p>
+              <p className="text-sm text-ink-2">Pick a shop, pharmacy or mini-mart near you and send us its <strong className="text-ink">location pin</strong>. That pin is what we'll work with. The nominations are how slots get unlocked.</p>
               <div role="note" className="rounded-xl border border-berry/30 bg-white p-3.5 text-sm text-ink-2">
                 <p className="flex items-start gap-2 font-semibold text-berry"><TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />Please check before you nominate</p>
                 <p className="mt-1.5">You can't nominate <strong className="text-ink">{NOT_NOMINATABLE.join(", ")}</strong>, or supermarkets that would take a long time to onboard. Pick an independent shop, pharmacy or mini-mart instead.</p>
               </div>
               <Field id="nomination" label="Shop name" icon={Store} optional error={shown("nomination")}>
-                {(p) => <input {...p} value={v.nomination} onChange={set("nomination")} onBlur={blur("nomination")} placeholder="e.g. Greenfield Pharmacy" />}
+                {(p) => <input {...p} value={v.nomination} onChange={set("nomination")} onBlur={blur("nomination")} required placeholder="e.g. Greenfield Pharmacy" />}
               </Field>
               <Field id="nominationPin" label="Shop location pin" icon={MapPin} optional error={shown("nominationPin")}
                 hint="In Google Maps: open the shop, tap Share, copy the link, paste it here. A pin link or coordinates only.">
-                {(p) => <input {...p} inputMode="url" autoCapitalize="none" autoComplete="off" value={v.nominationPin} onChange={set("nominationPin")} onBlur={blur("nominationPin")} placeholder="https://maps.app.goo.gl/…" />}
+                {(p) => <input {...p} inputMode="url" autoCapitalize="none" autoComplete="off" value={v.nominationPin} onChange={set("nominationPin")} onBlur={blur("nominationPin")} required placeholder="https://maps.app.goo.gl/…" />}
               </Field>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                 <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" className="font-semibold text-brand underline underline-offset-2">Open Google Maps</a>

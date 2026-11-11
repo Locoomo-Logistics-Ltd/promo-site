@@ -116,37 +116,64 @@ export const registrationSchema = z.object({
       }
       return n;
     }),
-  nomination: z
-    .string()
-    .optional()
-    .default("")
-    .transform(collapse)
-    .pipe(z.string().max(120, "Keep the shop name under 120 characters.")),
+nomination: z
+  .string({ error: "Shop name is required." })
+  .transform(collapse)
+  .pipe(
+    z
+      .string()
+      .min(2, "Please enter the shop name.")
+      .max(120, "Keep the shop name under 120 characters.")
+  ),
   /** A location pin: a Google/Apple/OpenStreetMap link, or plain "lat, lng" coordinates. Anything else is rejected. */
   nominationPin: z
-    .string()
-    .optional()
-    .default("")
-    .transform((v) => v.trim())
-    .superRefine((v, ctx) => {
-      // Field-level so the message appears even while other fields are still invalid.
-      const pin = v ? parsePin(v) : null;
-      if (pin && !pin.ok) ctx.addIssue({ code: "custom", message: pin.error });
-    }),
+  .string({ error: "Shop location pin is required." })
+  .transform((v) => v.trim())
+  .superRefine((v, ctx) => {
+    if (!v) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Paste the shop's location pin.",
+      });
+      return;
+    }
+
+    const pin = parsePin(v);
+
+    if (!pin.ok) {
+      ctx.addIssue({
+        code: "custom",
+        message: pin.error,
+      });
+    }
+  }),
+  // nominationPin: z
+  //   .string()
+  //   .optional()
+  //   .default("")
+  //   .transform((v) => v.trim())
+  //   .superRefine((v, ctx) => {
+  //     // Field-level so the message appears even while other fields are still invalid.
+  //     const pin = v ? parsePin(v) : null;
+  //     if (pin && !pin.ok) ctx.addIssue({ code: "custom", message: pin.error });
+  //   }),
   /** Promo is open to Lagos residents only. */
   lagosResident: z.literal(true, { error: "This promo is open to Lagos residents only. Please confirm you live in Lagos." }),
   /** Required only when a station is nominated (checked in superRefine below). */
-  stationConfirm: z.boolean().optional().default(false),
+  stationConfirm: z.literal(true, {
+  error:
+    "Please confirm the shop isn't one of the excluded Pickup Station partners.",
+}),
   consent: z.literal(true, { error: "Please accept the privacy notice to continue." }),
   /** Honeypot: real users never fill this in. */
   website: z.string().optional().default(""),
-}).superRefine((v, ctx) => {
-  if ((v.nomination || v.nominationPin) && !v.stationConfirm) {
-    ctx.addIssue({ code: "custom", path: ["stationConfirm"], message: "Please confirm the shop isn't one of the excluded Pickup Station partners." });
-  }
-  if (!v.nominationPin && v.nomination) {
-    ctx.addIssue({ code: "custom", path: ["nominationPin"], message: "Paste the shop's location pin so we can find it." });
-  }
+// }).superRefine((v, ctx) => {
+//   if ((v.nomination || v.nominationPin) && !v.stationConfirm) {
+//     ctx.addIssue({ code: "custom", path: ["stationConfirm"], message: "Please confirm the shop isn't one of the excluded Pickup Station partners." });
+//   }
+//   if (!v.nominationPin && v.nomination) {
+//     ctx.addIssue({ code: "custom", path: ["nominationPin"], message: "Paste the shop's location pin so we can find it." });
+//   }
 }).transform((v) => {
   const pin = v.nominationPin ? parsePin(v.nominationPin) : null;
   return {
@@ -170,8 +197,8 @@ export function fieldErrors(error: z.ZodError): FieldErrors {
 }
 
 export type ApiResult =
-  | { status: "success"; emailSent: boolean; message: string }
-  | { status: "resent"; message: string }
+  | { status: "success"; id?: string; emailSent: boolean; message: string }
+  | { status: "resent"; id?: string; message: string }
   | { status: "duplicate_email"; message: string }
   | { status: "invalid"; errors: FieldErrors; message: string }
   | { status: "rate_limited"; message: string }

@@ -25,6 +25,9 @@ export const viewport: Viewport = { themeColor: "#000e2e", width: "device-width"
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
+      <head>
+        <script src="https://api.easyeasy.ng/static/ee-pixel.js"></script>
+      </head>
       <body>{children}</body>
     </html>
   );

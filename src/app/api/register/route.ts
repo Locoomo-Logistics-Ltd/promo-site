@@ -59,13 +59,14 @@ export async function POST(req: Request) {
       case "created":
         return reply({
           status: "success",
+          id: outcome.id,
           emailSent: outcome.emailSent,
           message: outcome.emailSent
             ? "Your application has been received. Check your inbox for a confirmation email."
             : "Your application has been received, but we couldn't send the confirmation email just now. Submit the form again with the same email address and we'll resend it. You won't be entered twice.",
         });
       case "resent":
-        return reply({ status: "resent", message: "You've already applied, and we've now re-sent your confirmation email. Please check your inbox and spam folder." });
+        return reply({ status: "resent",  id: outcome.id, message: "You've already applied, and we've now re-sent your confirmation email. Please check your inbox and spam folder." });
       case "resend_failed":
         return reply({ status: "error", message: "You've already applied, but we still couldn't send your confirmation email. Please try again later or contact support." }, 502);
       case "duplicate_email":

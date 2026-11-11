@@ -4,8 +4,9 @@ import type { Mailer, RegistrationRecord, RegistrationStore, StoredRegistration 
 import { emailKey, type RegistrationInput } from "@/lib/validation";
 
 export type Outcome =
-  | { kind: "created"; emailSent: boolean }
-  | { kind: "resent" }
+  | { kind: "created"; id: string; emailSent: boolean }
+  | { kind: "resent"; id: string;}
+  
   | { kind: "resend_failed" }
   | { kind: "duplicate_email" };
 
