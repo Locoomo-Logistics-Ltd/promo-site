@@ -108,12 +108,19 @@ export async function register(
     return { kind: "created" as const, rec: { ...rec, rowNumber } as StoredRegistration };
   });
 
+
   // ---- Phase 2 (outside the lock): email only after the row is safely stored. ----
   switch (phase1.kind) {
     case "retry_email":
-      return (await deliver(store, mailer, phase1.rec)) ? { kind: "resent" } : { kind: "resend_failed" };
+      return (await deliver(store, mailer, phase1.rec)) 
+        ? { kind: "resent", id: phase1.rec.id } 
+        : { kind: "resend_failed" };
     case "created":
-      return { kind: "created", emailSent: await deliver(store, mailer, phase1.rec) };
+      return { 
+        kind: "created", 
+        id: phase1.rec.id, 
+        emailSent: await deliver(store, mailer, phase1.rec) 
+      };
     default:
       return phase1;
   }
